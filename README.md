@@ -15,6 +15,16 @@ AI coding agent의 작업 문맥을 프로젝트 안에 오래 남기는 도구�
 
 이 배포본의 실행파일은 **macOS(Apple Silicon)** 용입니다. Linux·Windows 빌드는 요청이 많거나 비용을 지급할 의사가 있는 개발자·회사에 제공합니다.
 
+설치는 세 단계입니다. **세 번째까지 마쳐야 끝납니다.**
+
+| 단계 | 하는 일 |
+| --- | --- |
+| 1 | `./install.sh` - 실행파일을 옮깁니다 |
+| 2 | `PATH` 에 `$HOME/.local/bin` 이 있는지 확인합니다 |
+| 3 | **`kontexus-cli doctor`** - 무엇이 빠졌는지 확인하고 채웁니다 |
+
+3단계를 건너뛰면 설치는 된 것처럼 보이지만 대화형 화면과 편집기 연동이 동작하지 않습니다.
+
 압축을 푼 디렉터리에서 `install.sh`를 실행합니다. 실행파일을 `$HOME/.local/bin`으로 옮깁니다.
 
 ```bash
@@ -45,9 +55,11 @@ kontexus-cli version
 kontexus-cli            # 인자 없이 실행하면 전체 사용법이 나옵니다
 ```
 
+여기까지가 2단계입니다. 아직 끝이 아닙니다 - 이어서 `doctor` 를 실행하십시오.
+
 ### 필수 유틸리티 설치
 
-**`kontexus-cli`는 혼자 돌지 않습니다.** 목록을 고르고 편집하는 대화형 화면이 외부 유틸리티를 씁니다. `doctor`가 무엇이 있고 무엇이 없는지 실측해 알려 주므로 **설치 직후 반드시 한 번 실행하십시오.**
+**`kontexus-cli`는 혼자 돌지 않습니다.** 목록을 고르고 편집하는 대화형 화면이 외부 유틸리티를 씁니다. `doctor`가 무엇이 있고 무엇이 없는지 실측해 알려 주므로 **설치의 마지막 단계로 반드시 실행하십시오.**
 
 ```bash
 kontexus-cli doctor
@@ -106,6 +118,12 @@ Windows는 WSL을 권합니다. Linux 배포판 안에서 위 목록을 설치�
 
 실행에 필요한 언어 런타임은 없습니다. SQLite는 바이너리 안에 들어 있어 따로 설치할 필요가 없습니다.
 
+설치한 뒤 `doctor` 를 다시 실행해 확인하십시오. **`Summary: ok` 로 나오고 `Required` 가 전부 `ok` 여야 설치가 끝난 것입니다.**
+
+```bash
+kontexus-cli doctor | head -3
+```
+
 ### 편집기 설정
 
 편집기를 여는 명령들은 `VISUAL`을 먼저 보고, 없으면 `EDITOR`를 봅니다. 둘 다 없으면 `task edit`은 이렇게 거부합니다.
@@ -158,7 +176,7 @@ kontexus-cli doctor | grep editor
 
 ### tmux 권장
 
-kontexus를 쓰는 방식은 보통 이렇습니다 — 한쪽 창에서 AI agent와 대화하고, 다른 창에서 `kontexus-cli`로 태스크와 노트를 봅니다. 여기에 tmux가 잘 맞습니다.
+kontexus를 쓰는 방식은 보통 이렇습니다 - 한쪽 창에서 AI agent와 대화하고, 다른 창에서 `kontexus-cli`로 태스크와 노트를 봅니다. 여기에 tmux가 잘 맞습니다.
 
 ![tmux 두 pane. 왼쪽은 AI agent 가 코드를 고치는 중이고, 오른쪽은 kontexus-cli task filter 가 태스크 트리를 보여 준다](images/screenshot1-workspace.png)
 
@@ -208,7 +226,45 @@ tmux의 마우스 모드와 `kontexus-cli task filter --mouse`는 **둘 다 마�
 
 ---
 
-## 2. 저장소 초기화
+## 2. CLI 가 특히 잘하는 것 셋
+
+### 2.1 기록을 고치는 데 DB 를 만질 일이 없습니다
+
+기록은 전부 텍스트 파일입니다. 편집기로 열어 고치고 색인만 다시 만들면 끝입니다.
+
+```bash
+$EDITOR .workgraph/tasks/T16/task.md
+kontexus-cli rebuild T16
+```
+
+SQL 을 쓸 일도, 마이그레이션을 걱정할 일도 없습니다. **원본이 파일이고 sqlite 는 거기서 다시 만드는 색인**이라 그렇습니다. 색인이 통째로 깨져도 `rebuild all` 한 번이면 돌아옵니다. → 3절
+
+### 2.2 문맥을 통째로 복사합니다
+
+```bash
+kontexus-cli chat copy T3 --header > 인수인계.md
+```
+
+`T3` 하나만 주면 **그 루트와 하위 Turn 의 본문이 차례로** 한 markdown 에 담깁니다. 여러 개를 줘도 됩니다.
+
+인수인계 문서를 따로 쓰지 않습니다. 다른 agent 에게 붙여 넣을 때도, 회고를 쓸 때도 이 한 줄입니다. → 10절
+
+### 2.3 Kontexus Note - 두 달 뒤에도 찾을 수 있는 기록
+
+태스크가 끝나면 사라지지만 계속 쓸 지식은 노트로 뺍니다. 식별자 자체가 분류와 날짜입니다.
+
+```
+0,rQv,1
+│  │  └── 그 날의 몇 번째
+│  └───── 언제 (birthday 로부터 며칠째)
+└──────── 무슨 종류 (0 inbox ... 9 governance)
+```
+
+이어 쓰면 `0,rQv,1a`, 거기서 갈라지면 `0,rQv,1,a`. **번호가 곧 계보**라 생각의 흐름이 트리로 남습니다. 태그를 붙이거나 폴더를 나누지 않아도 됩니다. → 4절
+
+---
+
+## 3. 저장소 초기화
 
 kontexus는 프로젝트마다 `.workgraph` 디렉터리 하나에 모든 기록을 담습니다. 프로젝트 루트에서 실행하십시오.
 
@@ -283,6 +339,32 @@ kontexus-cli rebuild all-task all-note
 
 **`rebuild`는 언제 실행해도 안전합니다.** 원본에서 다시 계산하는 것이라 잃을 것이 없습니다. 무언가 이상하면 먼저 `rebuild all`을 해 보십시오.
 
+### 태스크 파일을 직접 고치기
+
+기록이 텍스트 파일이라는 말은 **여러분이 직접 고쳐도 된다**는 뜻입니다. agent를 시키지 않고 편집기로 열어 제목을 바꾸고 문단을 지우고 표를 다시 짜도 됩니다.
+
+```bash
+$EDITOR .workgraph/tasks/T16/task.md      # 그냥 파일입니다
+kontexus-cli rebuild T16                  # 고친 것을 색인에 반영합니다
+```
+
+**`rebuild` 를 하기 전까지 목록은 옛 내용을 보여 줍니다.** 파일과 색인이 따로 놀기 때문입니다.
+
+| 시점 | `task list --all` |
+| --- | --- |
+| 고치기 전 | `[T16] R \| 직접 고칠 태스크` |
+| 파일만 고친 직후 | `[T16] R \| 직접 고칠 태스크` - 그대로입니다 |
+| `rebuild T16` 뒤 | `[T16] R \| 편집기로 바꾼 제목` |
+
+여러 개를 고쳤으면 한 번에 줍니다.
+
+```bash
+kontexus-cli rebuild T16 T17 T18
+kontexus-cli rebuild all-task            # 태스크 전부
+```
+
+`kontexus-cli task edit T16` 으로 열면 이 두 단계가 하나입니다 - 편집기를 닫는 순간 바뀐 것이 있으면 그 태스크만 알아서 다시 색인합니다.
+
 ### sqlite 파일을 지워 버렸다면
 
 `rebuild`는 색인의 **내용**을 다시 채우는 것이지 색인의 **틀**을 만드는 것이 아닙니다. `workgraph.sqlite`를 통째로 지우면 `rebuild`가 이렇게 중단됩니다.
@@ -302,7 +384,7 @@ kontexus-cli rebuild all
 
 ---
 
-## 3. 노트 초기화
+## 4. 노트 초기화
 
 > **노트를 하나라도 쓰기 전에 이 절을 끝까지 마치십시오.** 노트 식별자는 birthday를 기준으로 계산되므로, 나중에 birthday를 바꾸면 이미 발급된 식별자가 엉뚱한 날짜를 가리키게 됩니다. 되돌릴 방법이 없습니다.
 
@@ -322,7 +404,7 @@ kontexus의 노트는 Kontexus Note 방법론을 따릅니다. 식별자가 곧 
 | `2026-08-09` | `rQv`                      |
 | `2026-01-01` | `fDh`                      |
 
-### 3.1 기준 날짜(birthday) 지정
+### 4.1 기준 날짜(birthday) 지정
 
 노트 식별자의 기준이 되는 날짜입니다. 프로젝트 시작일을 넣으십시오.
 
@@ -336,9 +418,9 @@ kontexus-cli note config set-birthday 2026-08-09
 - 그러나 그 식별자를 되읽는 기준은 새 birthday가 됩니다. `2026-08-09`에 쓴 노트 `0,rQv,1`을 birthday `2026-01-01`로 바꾼 뒤 `kontexus-cli note id rQv`로 되읽으면 `2026-01-01`이 나옵니다. 실제 작성일과 다릅니다.
 - 그 뒤에 쓰는 노트는 새 기준으로 발급되므로, 한 저장소 안에 기준이 다른 식별자가 섞입니다. 어느 것이 어느 기준인지 구분할 방법이 없습니다.
 
-`set-birthday`를 실행하면 `sealed`가 `false`로 돌아갑니다. 3.3을 다시 해야 합니다.
+`set-birthday`를 실행하면 `sealed`가 `false`로 돌아갑니다. 4.3을 다시 해야 합니다.
 
-### 3.2 category 수정
+### 4.2 category 수정
 
 **category는 seal하기 전에 자신의 목적에 맞게 고치십시오.** seal한 뒤에는 이미 그 번호로 쓴 노트들이 쌓이기 시작하므로, 나중에 번호의 뜻을 바꾸면 과거 노트의 분류가 실제 내용과 일치하지 않게 됩니다.
 
@@ -359,7 +441,7 @@ kontexus-cli note config set-birthday 2026-08-09
 | 8    | incident   | 버그·장애의 증상, 재현, 원인, 재발 방지    |
 | 9    | governance | 기록 체계 자체를 바꾸는 운영 결정          |
 
-### 3.3 seal
+### 4.3 seal
 
 birthday와 category를 확정한 뒤 seal 합니다.
 
@@ -387,7 +469,7 @@ kontexus-cli note tree
 
 ![note tree 출력. category 번호와 이름 아래 fingerprint 와 날짜, 그 아래 노트 제목이 트리로 나온다](images/screenshot2-note-tree.png)
 
-`note tree`는 category → fingerprint → 노트 차례로 접어 보여 줍니다. `jZJ ('260805')`처럼 fingerprint 옆에 그 날짜가 함께 나오므로, 3.1에서 정한 birthday가 무엇이었는지에 따라 같은 날이 다른 세 글자로 보입니다.
+`note tree`는 category → fingerprint → 노트 차례로 접어 보여 줍니다. `jZJ ('260805')`처럼 fingerprint 옆에 그 날짜가 함께 나오므로, 4.1에서 정한 birthday가 무엇이었는지에 따라 같은 날이 다른 세 글자로 보입니다.
 
 ### seal 상태 확인
 
@@ -417,10 +499,10 @@ kontexus-cli note id rQv           # fingerprint → 날짜
 
 ```
 0,jgn,1        처음 쓴 노트
-0,jgn,1a       이어 쓴 것        — 숫자 뒤라 영문자가 붙는다
-0,jgn,1a1      또 이어 쓴 것      — 영문자 뒤라 숫자가 붙는다
+0,jgn,1a       이어 쓴 것        - 숫자 뒤라 영문자가 붙는다
+0,jgn,1a1      또 이어 쓴 것      - 영문자 뒤라 숫자가 붙는다
 0,jgn,1a1a     또 이어 쓴 것
-0,jgn,1,a      1 에서 갈라 나온 것 — 콤마 뒤에 새 조각이 열린다
+0,jgn,1,a      1 에서 갈라 나온 것 - 콤마 뒤에 새 조각이 열린다
 0,jgn,1,a1     그 갈래를 이어 쓴 것
 ```
 
@@ -459,11 +541,11 @@ kontexus-cli note id rQv           # fingerprint → 날짜
 
 `l`·`o`·`I`·`O`를 뺀 것은 `1`·`0`과 눈으로 구분되지 않기 때문입니다. 세 글자로 만들 수 있는 날은 `24 × 48 × 48 = 55,296`일, 곧 birthday로부터 약 151년입니다.
 
-이 규칙 덕에 `note id`는 인자를 보고 무엇을 할지 스스로 정합니다 — 세 글자 fingerprint 꼴이면 날짜로 풀고, 그 밖에는 날짜로 보고 fingerprint를 만듭니다.
+이 규칙 덕에 `note id`는 인자를 보고 무엇을 할지 스스로 정합니다 - 세 글자 fingerprint 꼴이면 날짜로 풀고, 그 밖에는 날짜로 보고 fingerprint를 만듭니다.
 
 ---
 
-## 4. MCP 등록
+## 5. MCP 등록
 
 `kontexus-cli config <대상>`이 각 도구에 맞는 설정 조각을 출력합니다. **출력에는 현재 디렉터리 기준의 저장소 경로가 이미 박혀 있으므로 프로젝트 루트에서 실행하십시오.**
 
@@ -475,7 +557,7 @@ kontexus-cli config opencode
 kontexus-cli config gemini
 ```
 
-### 4.1 Codex CLI
+### 5.1 Codex CLI
 
 명령으로 등록하는 것이 가장 간단합니다.
 
@@ -493,9 +575,9 @@ command = "kontexus-mcp"
 env.KONTEXUS_STORAGE = "/절대경로/프로젝트/.workgraph"
 ```
 
-대화 기록을 남기려면 Stop hook 도 함께 걸어야 합니다 — 5.2 를 보십시오.
+대화 기록을 남기려면 Stop hook 도 함께 걸어야 합니다 - 6.2 를 보십시오.
 
-### 4.2 Claude CLI
+### 5.2 Claude CLI
 
 ```bash
 claude mcp add kontexus-mcp \
@@ -521,9 +603,9 @@ claude mcp add kontexus-mcp \
 }
 ```
 
-대화 기록을 남기려면 Stop hook 도 함께 걸어야 합니다 — 5.1 을 보십시오.
+대화 기록을 남기려면 Stop hook 도 함께 걸어야 합니다 - 6.1 을 보십시오.
 
-### 4.3 opencode CLI
+### 5.3 opencode CLI
 
 `~/.config/opencode/opencode.json`의 `mcp` 항목에 `kontexus-cli config opencode`의 출력을 넣습니다.
 
@@ -547,7 +629,7 @@ claude mcp add kontexus-mcp \
 
 `--opencode`를 빠뜨리지 마십시오. opencode가 기대하는 응답 형식에 맞추는 옵션입니다.
 
-### 4.4 Antigravity IDE
+### 5.4 Antigravity IDE
 
 `~/.gemini/antigravity-ide/mcp_config.json`의 `mcpServers` 항목에 넣습니다. 형식이 Claude와 같으므로 `kontexus-cli config claude`의 출력을 그대로 씁니다.
 
@@ -566,7 +648,7 @@ claude mcp add kontexus-mcp \
 
 이미 다른 MCP server가 등록되어 있으면 `mcpServers` 안에 항목만 더하십시오. 파일 전체를 덮어쓰면 기존 등록이 삭제됩니다. 편집 후 Antigravity IDE를 다시 시작해야 적용됩니다.
 
-### 4.5 Gemini CLI
+### 5.5 Gemini CLI
 
 ```json
 {
@@ -583,7 +665,7 @@ claude mcp add kontexus-mcp \
 
 ---
 
-## 5. 대화 기록 저장 (Stop hook)
+## 6. 대화 기록 저장 (Stop hook)
 
 > **이 절을 건너뛰면 대화가 저장되지 않습니다.** MCP 등록은 agent가 kontexus의 도구를 부를 수 있게 할 뿐이고, 주고받은 대화 자체를 남기는 것은 Stop hook입니다. 세션이 끊긴 뒤 `search_chat`으로 되살릴 수 있는 것은 여기서 저장된 것뿐입니다.
 
@@ -595,7 +677,7 @@ agent가 턴을 마침 → Stop hook 실행 → kontexus-cli chat hook
                                         → 그 밖이면 Codex 최신 thread 를 import
 ```
 
-### 5.1 Claude Code
+### 6.1 Claude Code
 
 `kontexus-cli config claude settings`의 출력을 프로젝트의 `.claude/settings.json`에 넣습니다. 배포물의 `.claude/settings.json`이 그 예시입니다.
 
@@ -624,7 +706,7 @@ agent가 턴을 마침 → Stop hook 실행 → kontexus-cli chat hook
 
 **이미 `settings.json`이 있으면 `Stop` 배열에 항목만 더하십시오.** 파일을 통째로 덮어쓰면 기존 hook이 사라집니다.
 
-### 5.2 Codex CLI
+### 6.2 Codex CLI
 
 `kontexus-cli config codex hook`의 출력을 `~/.codex/hooks.json`에 넣습니다. 배포물의 `.codex/hooks.json`이 그 예시입니다.
 
@@ -647,7 +729,7 @@ agent가 턴을 마침 → Stop hook 실행 → kontexus-cli chat hook
 }
 ```
 
-### 5.3 그 밖의 agent — 직접 import
+### 6.3 그 밖의 agent - 직접 import
 
 `chat hook`이 스스로 가리는 것은 **Claude Code 와 Codex 둘뿐입니다.** opencode·Antigravity IDE·Gemini에는 이 hook을 걸지 마십시오. 걸면 지금 도는 agent가 아니라 Codex의 마지막 thread를 가져옵니다.
 
@@ -660,7 +742,7 @@ kontexus-cli chat import-claude             # Claude 세션(--update 로 upsert)
 kontexus-cli chat import-codex              # Codex 최신 thread
 ```
 
-### 5.4 저장되는지 확인
+### 6.4 저장되는지 확인
 
 hook을 걸어도 **capture가 꺼져 있으면 아무것도 저장되지 않습니다.** `chat hook`이 가장 먼저 보는 것이 이 상태입니다.
 
@@ -680,11 +762,11 @@ kontexus-cli chat search "방금 말한 낱말"
 | --- | --- |
 | 목록이 비어 있음 | `chat capture status`가 `enabled`인지 |
 | 그래도 비어 있음 | `which kontexus-cli`로 hook이 부를 실행파일이 PATH에 있는지 |
-| Claude인데 Codex 것이 들어옴 | `chat hook` 대신 다른 hook이 걸려 있는지, 또는 5.3 대상에 hook을 건 것은 아닌지 |
+| Claude인데 Codex 것이 들어옴 | `chat hook` 대신 다른 hook이 걸려 있는지, 또는 6.3 대상에 hook을 건 것은 아닌지 |
 
 ---
 
-## 6. `#FTM` 지시자
+## 7. `#FTM` 지시자
 
 MCP를 등록하면 AI agent가 kontexus의 도구를 부를 수 있게 됩니다. 그중 `structure_reasoning`은 agent의 **판단**을 구조로 남기는 도구입니다 - 무엇이 사실이고 무엇이 가정이며 어떤 규칙으로 다음 상태를 유도했는지를 기록합니다.
 
@@ -743,7 +825,7 @@ grep -n 'G선생\|A\.J' CLAUDE.local.md
 
 ---
 
-## 7. TaskID 발급 규칙
+## 8. TaskID 발급 규칙
 
 kontexus의 태스크 식별자는 **반드시 발급 절차를 거쳐야 합니다.** 번호를 임의로 정해 쓸 수 없습니다.
 
@@ -754,7 +836,7 @@ kontexus의 태스크 식별자는 **반드시 발급 절차를 거쳐야 합니
 
 ![task list -r 출력. T30 아래에 T30.1 부터 T30.5 까지 턴 태스크가 들여쓰기로 달려 있다](images/screenshot3-task-list-r.png)
 
-`T30` 아래 `T30.1`~`T30.5`가 들여쓰기로 달린 것이 루트와 턴의 관계입니다. 맨 앞 글자가 상태이고, 이 화면은 10절의 `T` alias로 `T list -r`을 실행한 것입니다.
+`T30` 아래 `T30.1`~`T30.5`가 들여쓰기로 달린 것이 루트와 턴의 관계입니다. 맨 앞 글자가 상태이고, 이 화면은 11절의 `T` alias로 `T list -r`을 실행한 것입니다.
 
 발급하지 않은 번호로 등록하려 하면 거부됩니다.
 
@@ -789,11 +871,11 @@ kontexus-cli task add -t "구현" -p T16 --active
 
 ---
 
-## 8. 한 번 해 보기 — 프롬프트에서 checkpoint까지
+## 9. 한 번 해 보기 - 프롬프트에서 checkpoint까지
 
 여기까지 설정했다면 이제 agent에게 말만 하면 됩니다. 아래는 실제로 쳐 볼 수 있는 프롬프트와, 그 뒤에 무슨 일이 일어나는지입니다.
 
-### 8.1 프롬프트
+### 9.1 프롬프트
 
 ```
 New Task: 로그인 실패 시 재시도 로직 정리
@@ -810,10 +892,10 @@ New Task: 로그인 실패 시 재시도 로직 정리
 | --- | --- |
 | `New Task:` + 제목 | 새 루트 태스크를 만들라 |
 | 본문 | 무엇이 문제인지. agent가 추측하지 않아도 되게 |
-| `#FTM` | 답하기 전에 판단을 구조로 남기라 (6절) |
+| `#FTM` | 답하기 전에 판단을 구조로 남기라 (7절) |
 | `턴태스크로 등록한 뒤 진행` | 계획을 Turn으로 쪼개고, 등록하고, 결속한 다음 손대라 |
 
-### 8.2 agent가 밟는 순서
+### 9.2 agent가 밟는 순서
 
 프롬프트 하나에 agent는 이렇게 움직입니다.
 
@@ -826,13 +908,13 @@ New Task: 로그인 실패 시 재시도 로직 정리
 6. upsert_task  T51.1          Turn 레코드를 만든다
 7. set_active_task  T51.1      여기서부터 이 Turn 이 작업 대상이다
 8. (코드를 읽고 고친다)
-9. structure_reasoning         turnClosure: "closing" — 끝났으니 검사해 달라
+9. structure_reasoning         turnClosure: "closing" - 끝났으니 검사해 달라
 10. upsert_task T51.1 append   무엇을 어떻게 고쳤는지 기록에 쌓는다
 ```
 
 **7번 전에는 파일을 고치지 않습니다.** 결속하지 않은 채 손대면 그 변경이 어느 태스크의 것인지 나중에 알 수 없습니다.
 
-### 8.3 9번에서 서버가 하는 일
+### 9.3 9번에서 서버가 하는 일
 
 `turnClosure: "closing"` 은 "끝났다"는 선언이 아니라 **"지금 검사해 달라"**는 요청입니다. 서버는 agent에게 되묻지 않고 기록을 직접 봅니다.
 
@@ -844,7 +926,7 @@ New Task: 로그인 실패 시 재시도 로직 정리
 
 `contradicted` 는 진행을 막지 않습니다. 다만 기록에 남고, 다음 Turn으로 옮겨 가도 지워지지 않습니다. 그래서 사실과 다른 `closing` 은 남는 것이 없습니다.
 
-### 8.4 사람이 확정합니다
+### 9.4 사람이 확정합니다
 
 agent가 "끝냈습니다"라고 해도 아직 이력이 아닙니다. 여러분이 확인하고 도장을 찍습니다.
 
@@ -857,7 +939,7 @@ kontexus-cli task checkpoint -m "로그인 재시도 카운터 정리"
 
 `stage` 와 `checkpoint` 는 MCP 도구에 없습니다. agent가 스스로 찍을 수 없는 것이 이 두 개입니다.
 
-### 8.5 다음 세션에서
+### 9.5 다음 세션에서
 
 창을 닫았다가 다시 열었을 때, agent에게 이렇게만 말하면 됩니다.
 
@@ -867,7 +949,7 @@ T51 이어서 하십시오.
 
 agent는 `get_task_context(T51)` 로 그 태스크의 기록과 연결된 대화를 되살리고, `get_ftm_continuation` 으로 지난번 판단이 멈춘 지점을 이어받습니다. 무엇을 하고 있었는지 여러분이 다시 설명하지 않습니다.
 
-### 8.6 문맥이란 무엇인가
+### 9.6 문맥이란 무엇인가
 
 **그 태스크를 진행하는 동안 알게 된 것들입니다.** 코드 어디를 봤고, 무엇이 나왔고, 왜 그 방향으로 갔는지. 작업하면서 손에 들어온 정보 전부입니다.
 
@@ -880,19 +962,19 @@ agent는 `get_task_context(T51)` 로 그 태스크의 기록과 연결된 대화
 
 이것들은 대화 안에만 있으면 창을 닫는 순간 사라집니다. 태스크에 적어 두면 남습니다.
 
-**어디에 적는가** — 그 태스크 레코드의 본문(`description`)입니다. 지침이 그 위치를 정해 두었습니다.
+**어디에 적는가** - 그 태스크 레코드의 본문(`description`)입니다. 지침이 그 위치를 정해 두었습니다.
 
 > 사용자가 태스크의 문맥을 업데이트해 달라는 요청은 해당 태스크의 description에 추가해 달라는 표현입니다.
-> — `CLAUDE.local.md` [P4.6b.3]
+> - `CLAUDE.local.md` [P4.6b.3]
 
 그래서 "문맥에 추가해 주십시오"라고만 해도 agent가 어디에 쌓을지 다시 묻지 않습니다. 노트로 뺄지 태스크에 붙일지 매번 정하지 않아도 되게 해 둔 것입니다.
 
-**왜 쌓는가** — 다음 세션의 agent가 그 태스크에 대해 읽을 수 있는 것은 이것뿐입니다. 여기 없는 것은 여러분이 다시 설명해야 합니다.
+**왜 쌓는가** - 다음 세션의 agent가 그 태스크에 대해 읽을 수 있는 것은 이것뿐입니다. 여기 없는 것은 여러분이 다시 설명해야 합니다.
 
 > 작업 문맥이 불확실하면 위 두 도구로 필요한 만큼 복원하십시오. 복구 없이 작업을 재개하면 이전 결정과 모순되는 행동을 할 위험이 있습니다.
-> — `CLAUDE.local.md` [P4.6b.7]
+> - `CLAUDE.local.md` [P4.6b.7]
 
-### 8.7 문맥 복구 — 기록이 비어 있을 때
+### 9.7 문맥 복구 - 기록이 비어 있을 때
 
 `T51 이어서 하십시오` 로 부족하면 무엇을 되살릴지 짚어 줍니다.
 
@@ -908,11 +990,11 @@ T51 레코드가 비어 있으면 search_chat 으로 그 무렵 대화를 찾아
 무엇을 하기로 했었는지 복원하십시오.
 ```
 
-### 8.8 문맥 저장·추가·변경
+### 9.8 문맥 저장·추가·변경
 
 작업 도중 알아낸 것을 그 태스크에 쌓습니다. 다음 세션이 읽을 유일한 곳입니다.
 
-**추가** — 가장 자주 쓰는 형태입니다. 기존 본문 뒤에 붙습니다.
+**추가** - 가장 자주 쓰는 형태입니다. 기존 본문 뒤에 붙습니다.
 
 ```
 T51 문맥에 추가하십시오.
@@ -921,14 +1003,14 @@ T51 문맥에 추가하십시오.
 때문입니다. 한쪽으로 합치면 만료 시 잠금이 풀리지 않습니다.
 ```
 
-**저장** — 처음 등록할 때. 방금 정한 계획을 그대로 넣습니다.
+**저장** - 처음 등록할 때. 방금 정한 계획을 그대로 넣습니다.
 
 ```
 방금 정한 계획을 T51.2 문맥으로 저장하십시오. 착수 지점과
 검증 방법까지 적어, 제가 없어도 다른 사람이 이어받을 수 있게 하십시오.
 ```
 
-**변경** — 앞서 적은 것이 틀렸을 때. 이때는 덮어쓴다고 분명히 말해야 합니다.
+**변경** - 앞서 적은 것이 틀렸을 때. 이때는 덮어쓴다고 분명히 말해야 합니다.
 
 ```
 T51 문맥에서 "재시도 3회" 부분이 틀렸습니다. 실제로는 5회입니다.
@@ -944,7 +1026,7 @@ kontexus-cli task T51            # 그 루트와 하위 Turn
 kontexus-cli task edit T51       # 편집기로 직접 고쳐도 됩니다 (1절 편집기 설정)
 ```
 
-### 8.9 노트 남기기 — 카테고리는 agent가 골라도 됩니다
+### 9.9 노트 남기기 - 카테고리는 agent가 골라도 됩니다
 
 태스크가 끝나면 사라지지만 계속 쓸 지식은 노트로 뺍니다. 카테고리 번호를 직접 정해도 되고,
 
@@ -969,14 +1051,14 @@ agent가 고른 번호가 마음에 안 들면 그때 옮기면 됩니다.
 
 | | 어디에 |
 | --- | --- |
-| 그 태스크를 하는 동안만 쓸 것 | 태스크 문맥 (8.8) |
+| 그 태스크를 하는 동안만 쓸 것 | 태스크 문맥 (9.8) |
 | 태스크가 끝나도 계속 쓸 것 | 노트 |
 
 두 달 뒤에 다시 찾을 것 같으면 노트입니다.
 
 ---
 
-## 9. 태스크 관리 화면
+## 10. 태스크 관리 화면
 
 `task filter`는 태스크 목록을 화면에서 직접 다룹니다. TTY에서만 열립니다.
 
@@ -1013,7 +1095,45 @@ kontexus-cli task T16              # 그 루트와 하위 Turn만
 kontexus-cli task log              # 진행 이력
 ```
 
-### fzf로 열기 — `--fef`
+### 문맥을 하나의 문서로 - `chat copy`
+
+여러 태스크에 흩어진 문맥을 **하나의 markdown 으로 이어 붙여** 냅니다. 다른 사람에게 넘기거나, 다른 agent에게 통째로 붙여 넣거나, 회고를 쓸 때 씁니다.
+
+```bash
+kontexus-cli chat copy T3
+```
+
+`T3` 하나만 주면 **그 루트와 하위 Turn 의 본문이 차례로** 나옵니다. Turn 을 일일이 열어 옮기지 않아도 됩니다.
+
+여러 개를 주면 그만큼 이어 붙입니다.
+
+```bash
+kontexus-cli chat copy T3 T7 T12
+```
+
+제목을 머리글로 붙이려면 `--header` 를 줍니다.
+
+```bash
+kontexus-cli chat copy T3 --header
+```
+
+```markdown
+# [T3] 결제 모듈 정리
+
+## 목적
+...
+```
+
+출력은 stdout 이라 그대로 파일로 보내거나 클립보드에 넣습니다.
+
+```bash
+kontexus-cli chat copy T3 T7 --header > 인수인계.md
+kontexus-cli chat copy T3 --header | pbcopy          # macOS
+```
+
+TaskID 대신 날짜·시각을 주면 그 무렵 대화를 뽑습니다. 태스크 번호가 기억나지 않을 때 씁니다.
+
+### fzf로 열기 - `--fef`
 
 `task filter` 말고 다른 방식도 있습니다. 조회 명령에 `--fef` 를 붙이면 같은 범위가 fzf 후보로 열립니다. 타자로 걸러 고르고, 고르면 편집기로 넘어갑니다.
 
@@ -1026,7 +1146,7 @@ kontexus-cli track log --fef
 
 `task filter` 는 상태를 그 화면에서 바꾸는 곳이고, `--fef` 는 많은 것 중에서 하나를 빨리 집는 곳입니다.
 
-### `--refresh` — 목록을 몇 초마다 다시 읽을지
+### `--refresh` - 목록을 몇 초마다 다시 읽을지
 
 `--fef` 로 연 목록은 열려 있는 동안 스스로 다시 읽습니다. agent가 옆에서 계속 태스크를 만들고 있으면 그것이 화면에 따라옵니다. 그 주기가 `--refresh` 입니다.
 
@@ -1066,7 +1186,7 @@ kontexus-cli note list --fef --no-refresh    # 다시 읽지 않음
 
 ---
 
-## 10. alias 등록
+## 11. alias 등록
 
 명령이 길어 자주 치기 번거롭습니다. 셸 설정 파일(`~/.zshrc` 또는 `~/.bashrc`)에 넣으십시오.
 
@@ -1103,7 +1223,7 @@ TT
 
 ---
 
-## 11. 자주 쓰는 흐름
+## 12. 자주 쓰는 흐름
 
 ```bash
 # 1. 지금 무슨 일이 있었는지
@@ -1184,18 +1304,18 @@ kontexus-cli track switch <trackName>
 
 ---
 
-## 12. 문제가 생기면
+## 13. 문제가 생기면
 
 | 증상                                     | 확인할 것                                                                                       |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `Kontexus memory storage was not found`  | 프로젝트 루트에서 실행했는지, `kontexus-cli init`을 했는지                                      |
-| `note list`가 `Unknown command`로 거부됨 | 첫 줄이 `unsealed`이면 3절의 노트 초기화를 마치지 않은 것입니다                                 |
-| 노트 목록의 날짜가 실제와 다름                | birthday를 도중에 바꿨는지 확인하십시오. 3.1을 보십시오                                         |
+| `note list`가 `Unknown command`로 거부됨 | 첫 줄이 `unsealed`이면 4절의 노트 초기화를 마치지 않은 것입니다                                 |
+| 노트 목록의 날짜가 실제와 다름                | birthday를 도중에 바꿨는지 확인하십시오. 4.1을 보십시오                                         |
 | MCP server가 안 붙음                     | `which kontexus-mcp`로 PATH를 확인하고, 설정의 `KONTEXUS_STORAGE`가 절대경로인지 보십시오       |
-| 목록과 실제 파일이 다름                  | `kontexus-cli rebuild all`로 색인을 다시 만듭니다 (2절 참조)                                    |
+| 목록과 실제 파일이 다름                  | `kontexus-cli rebuild all`로 색인을 다시 만듭니다 (3절 참조)                                    |
 | `git pull` 뒤 새 기록이 안 보임          | 같은 이유입니다. `kontexus-cli rebuild all`                                                     |
 | 대화형 목록이 안 열림                    | `kontexus-cli doctor`의 `Required` 항목을 보십시오. `fzf`나 `dialog`가 없는 것입니다 (1절 참조) |
-| `no such table: schema_migrations`       | sqlite 파일이 없어진 것입니다. 2절의 "sqlite 파일을 지워 버렸다면"을 보십시오                   |
+| `no such table: schema_migrations`       | sqlite 파일이 없어진 것입니다. 3절의 "sqlite 파일을 지워 버렸다면"을 보십시오                   |
 
 환경 진단:
 
@@ -1209,7 +1329,7 @@ kontexus-cli rebuild all
 
 ---
 
-## 13. `kontexus-cli web` — 별매 예정
+## 14. `kontexus-cli web` - 별매 예정
 
 `web` 명령은 **3D 공간을 활용한 작업관리 도구**입니다. 태스크와 Turn, track 의 갈래와 checkpoint 이력을 평면 목록이 아니라 공간에 놓고 다룹니다.
 
@@ -1219,7 +1339,7 @@ kontexus-cli rebuild all
 kontexus-cli web --storage ./.workgraph --port 3200
 ```
 
-명령 자체는 남아 있어 서버는 뜨지만, 화면 자산이 없으므로 브라우저에는 아무것도 나오지 않습니다. 이 배포본으로 하실 수 있는 것은 CLI 와 MCP 이며, 그것만으로 이 문서의 1절부터 12절까지가 전부 동작합니다.
+명령 자체는 남아 있어 서버는 뜨지만, 화면 자산이 없으므로 브라우저에는 아무것도 나오지 않습니다. 이 배포본으로 하실 수 있는 것은 CLI 와 MCP 이며, 그것만으로 이 문서의 1절부터 13절까지가 전부 동작합니다.
 
 판매 시점과 조건은 정해지면 소개 페이지에 올립니다.
 
@@ -1241,6 +1361,6 @@ kontexus-cli about
 
 **유료 제품·서비스에 포함하는 것은 허락하지 않습니다.** 판매하는 제품이나 과금하는 서비스에 이 도구를 넣어 재배포·재판매할 수 없습니다. 이름을 바꾸어 넣는 것도 같습니다.
 
-**기능 수정·추가·맞춤 제작이 필요하시면 연락 주십시오.** Gmail — ID `andrwj`
+**기능 수정·추가·맞춤 제작이 필요하시면 연락 주십시오.** Gmail - ID `andrwj`
 
 © 2026 A.J. All rights reserved.
