@@ -1,0 +1,4 @@
+[mcp_servers.kontexus-mcp]
+command = "kontexus-mcp"
+env.KONTEXUS_STORAGE = "/FULLPATH/PROJECT/.workgraph"
+
