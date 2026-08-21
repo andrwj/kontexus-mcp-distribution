@@ -741,7 +741,7 @@ export const StopHook = async ({ $, directory }) => {
   return {
     event: async ({ event }) => {
       if (event.type === "session.idle") {
-        await $`kontexus-cli --storage ${directory}/.workgraph chat hook`
+        await $`kontexus-cli --storage ${directory}/.workgraph chat hook > /dev/null`
       }
     },
   }
@@ -749,6 +749,8 @@ export const StopHook = async ({ $, directory }) => {
 ```
 
 `directory`를 `--storage`에 전달하므로 OpenCode를 어느 경로에서 시작했는지와 관계없이 event가 발생한 프로젝트의 `.workgraph`에 저장합니다. 파일을 추가하거나 변경한 뒤에는 OpenCode를 다시 시작하십시오.
+
+`> /dev/null`은 `chat hook`의 `{"continue":true}` stdout이 OpenCode prompt UI에 표시되지 않게 합니다. stderr와 command 실패는 그대로 전달되므로 실제 오류는 확인할 수 있습니다.
 
 OpenCode는 child process에 `OPENCODE=1`을 설정합니다. `chat hook`은 이 값을 자동 탐지한 뒤 현재 repository와 연결된 OpenCode session을 읽으며, `sessionId` 입력은 요구하지 않습니다.
 
