@@ -350,11 +350,11 @@ kontexus-cli rebuild T16                  # 고친 것을 색인에 반영합니
 
 **`rebuild` 를 하기 전까지 목록은 옛 내용을 보여 줍니다.** 파일과 색인이 따로 놀기 때문입니다.
 
-| 시점 | `task list --all` |
-| --- | --- |
-| 고치기 전 | `[T16] R \| 직접 고칠 태스크` |
+| 시점             | `task list --all`                            |
+| ---------------- | -------------------------------------------- |
+| 고치기 전        | `[T16] R \| 직접 고칠 태스크`                |
 | 파일만 고친 직후 | `[T16] R \| 직접 고칠 태스크` - 그대로입니다 |
-| `rebuild T16` 뒤 | `[T16] R \| 편집기로 바꾼 제목` |
+| `rebuild T16` 뒤 | `[T16] R \| 편집기로 바꾼 제목`              |
 
 여러 개를 고쳤으면 한 번에 줍니다.
 
@@ -475,9 +475,9 @@ kontexus-cli note tree
 
 note 명령을 부르면 첫 줄에 상태가 나옵니다.
 
-| 표시       | 뜻                                            |
-| ---------- | --------------------------------------------- |
-| `sealed`   | seal 완료. 정상 상태                          |
+| 표시       | 뜻                                              |
+| ---------- | ----------------------------------------------- |
+| `sealed`   | seal 완료. 정상 상태                            |
 | `unsealed` | 아직 seal 전이거나 `set-birthday`로 해제된 상태 |
 
 `unsealed` 상태에서는 `note list`·`note tree`·`note search`·`note category`가 `Unknown command`로 거부됩니다.
@@ -506,10 +506,10 @@ kontexus-cli note id rQv           # fingerprint → 날짜
 0,jgn,1,a1     그 갈래를 이어 쓴 것
 ```
 
-| 붙는 방식 | 뜻 | 만드는 법 |
-| --- | --- | --- |
-| 콤마 **없이** 숫자나 영문자 | 같은 줄기를 이어 씀 | `note add --parent <NoteId> --continue` |
-| 콤마 **뒤에** 새 조각 | 그 지점에서 갈라 나옴 | `note add --parent <NoteId> --fork` |
+| 붙는 방식                   | 뜻                    | 만드는 법                               |
+| --------------------------- | --------------------- | --------------------------------------- |
+| 콤마 **없이** 숫자나 영문자 | 같은 줄기를 이어 씀   | `note add --parent <NoteId> --continue` |
+| 콤마 **뒤에** 새 조각       | 그 지점에서 갈라 나옴 | `note add --parent <NoteId> --fork`     |
 
 `note tree`로 보면 이 관계가 그대로 계층이 됩니다.
 
@@ -605,7 +605,7 @@ claude mcp add kontexus-mcp \
 
 대화 기록을 남기려면 Stop hook 도 함께 걸어야 합니다 - 6.1 을 보십시오.
 
-### 5.3 opencode CLI
+### 5.3 OpenCode CLI
 
 `~/.config/opencode/opencode.json`의 `mcp` 항목에 `kontexus-cli config opencode`의 출력을 넣습니다.
 
@@ -628,6 +628,8 @@ claude mcp add kontexus-mcp \
 ```
 
 `--opencode`를 빠뜨리지 마십시오. opencode가 기대하는 응답 형식에 맞추는 옵션입니다.
+
+대화 기록을 자동으로 남기려면 `session.idle` plugin도 설정해야 합니다. 6.3을 보십시오.
 
 ### 5.4 Antigravity IDE
 
@@ -674,7 +676,8 @@ Stop hook은 agent가 한 턴을 마칠 때마다 `kontexus-cli chat hook`을 �
 ```
 agent가 턴을 마침 → Stop hook 실행 → kontexus-cli chat hook
                                         → Claude Code 면 transcript 를 읽어 import
-                                        → 그 밖이면 Codex 최신 thread 를 import
+                                        → OpenCode 면 repository session 을 읽어 upsert
+                                        → Claude Code와 OpenCode가 아니면 Codex 최신 thread 를 import
 ```
 
 ### 6.1 Claude Code
@@ -729,20 +732,47 @@ agent가 턴을 마침 → Stop hook 실행 → kontexus-cli chat hook
 }
 ```
 
-### 6.3 그 밖의 agent - 직접 import
+### 6.3 OpenCode
 
-`chat hook`이 스스로 가리는 것은 **Claude Code 와 Codex 둘뿐입니다.** opencode·Antigravity IDE·Gemini에는 이 hook을 걸지 마십시오. 걸면 지금 도는 agent가 아니라 Codex의 마지막 thread를 가져옵니다.
+프로젝트 루트에 `.opencode/plugins/stop-hook.js`를 만듭니다. OpenCode가 `session.idle` event를 전달하면 plugin이 통합 `chat hook`을 실행합니다.
 
-대신 필요할 때 직접 부릅니다.
-
-```bash
-kontexus-cli chat import-antigravity        # Antigravity IDE transcript
-kontexus-cli chat import-from <파일 경로>   # markdown transcript 파일
-kontexus-cli chat import-claude             # Claude 세션(--update 로 upsert)
-kontexus-cli chat import-codex              # Codex 최신 thread
+```js
+export const StopHook = async ({ $, directory }) => {
+  return {
+    event: async ({ event }) => {
+      if (event.type === "session.idle") {
+        await $`kontexus-cli --storage ${directory}/.workgraph chat hook`
+      }
+    },
+  }
+}
 ```
 
-### 6.4 저장되는지 확인
+`directory`를 `--storage`에 전달하므로 OpenCode를 어느 경로에서 시작했는지와 관계없이 event가 발생한 프로젝트의 `.workgraph`에 저장합니다. 파일을 추가하거나 변경한 뒤에는 OpenCode를 다시 시작하십시오.
+
+OpenCode는 child process에 `OPENCODE=1`을 설정합니다. `chat hook`은 이 값을 자동 탐지한 뒤 현재 repository와 연결된 OpenCode session을 읽으며, `sessionId` 입력은 요구하지 않습니다.
+
+Stop hook은 매번 repository session을 다시 읽고 같은 `datetime` row를 `Upsert`합니다. 따라서 한 턴의 assistant 응답이 이전 실행보다 길어졌으면 기존 row의 `title`과 `content`가 갱신됩니다.
+
+### 6.4 직접 import
+
+Stop hook과 관계없이 과거 session이나 transcript를 한 번 가져오려면 다음 명령을 직접 실행합니다. `import-opencode`는 OpenCode Stop hook command가 아니라 일회성 importer입니다.
+
+```bash
+kontexus-cli chat import-opencode --list       # 현재 repository의 OpenCode session 목록
+kontexus-cli chat import-opencode --id <id>    # 지정 OpenCode session을 한 번 import
+kontexus-cli chat import-opencode --update     # 기존 datetime row도 갱신
+kontexus-cli chat import-antigravity           # Antigravity IDE transcript
+kontexus-cli chat import-from <파일 경로>      # markdown transcript 파일
+kontexus-cli chat import-claude                # Claude 세션(--update 로 upsert)
+kontexus-cli chat import-codex                 # Codex 최신 thread
+```
+
+OpenCode Stop hook은 항상 `Upsert`를 사용하지만, 직접 실행하는 `import-opencode`는 기본적으로 기존 row를 유지합니다. 일회성 import에서도 기존 row를 갱신하려면 `--update`를 지정하십시오.
+
+Antigravity IDE와 Gemini에는 현재 자동 `chat hook`을 설정하지 않습니다. 필요한 transcript는 `import-antigravity` 또는 `import-from`으로 가져오십시오.
+
+### 6.5 저장되는지 확인
 
 hook을 걸어도 **capture가 꺼져 있으면 아무것도 저장되지 않습니다.** `chat hook`이 가장 먼저 보는 것이 이 상태입니다.
 
@@ -758,11 +788,13 @@ kontexus-cli chat list --format text
 kontexus-cli chat search "방금 말한 낱말"
 ```
 
-| 증상 | 확인할 것 |
-| --- | --- |
-| 목록이 비어 있음 | `chat capture status`가 `enabled`인지 |
-| 그래도 비어 있음 | `which kontexus-cli`로 hook이 부를 실행파일이 PATH에 있는지 |
-| Claude인데 Codex 것이 들어옴 | `chat hook` 대신 다른 hook이 걸려 있는지, 또는 6.3 대상에 hook을 건 것은 아닌지 |
+| 증상                                   | 확인할 것                                                     |
+| -------------------------------------- | ------------------------------------------------------------- |
+| 목록이 비어 있음                       | `chat capture status`가 `enabled`인지                         |
+| 그래도 비어 있음                       | `which kontexus-cli`로 hook이 부를 실행파일이 PATH에 있는지   |
+| Claude인데 Codex 것이 들어옴           | `chat hook` 대신 다른 hook이 걸려 있는지                      |
+| OpenCode 기록이 다른 프로젝트에 들어옴 | plugin command에 `--storage ${directory}/.workgraph`가 있는지 |
+| OpenCode plugin 변경이 적용되지 않음   | OpenCode를 다시 시작했는지                                    |
 
 ---
 
@@ -888,11 +920,11 @@ New Task: 로그인 실패 시 재시도 로직 정리
 
 이 짧은 글에 지시가 넷 들어 있습니다.
 
-| 적은 것 | 요구하는 것 |
-| --- | --- |
-| `New Task:` + 제목 | 새 루트 태스크를 만들라 |
-| 본문 | 무엇이 문제인지. agent가 추측하지 않아도 되게 |
-| `#FTM` | 답하기 전에 판단을 구조로 남기라 (7절) |
+| 적은 것                     | 요구하는 것                                          |
+| --------------------------- | ---------------------------------------------------- |
+| `New Task:` + 제목          | 새 루트 태스크를 만들라                              |
+| 본문                        | 무엇이 문제인지. agent가 추측하지 않아도 되게        |
+| `#FTM`                      | 답하기 전에 판단을 구조로 남기라 (7절)               |
 | `턴태스크로 등록한 뒤 진행` | 계획을 Turn으로 쪼개고, 등록하고, 결속한 다음 손대라 |
 
 ### 9.2 agent가 밟는 순서
@@ -918,11 +950,11 @@ New Task: 로그인 실패 시 재시도 로직 정리
 
 `turnClosure: "closing"` 은 "끝났다"는 선언이 아니라 **"지금 검사해 달라"**는 요청입니다. 서버는 agent에게 되묻지 않고 기록을 직접 봅니다.
 
-| 판정 | 뜻 |
-| --- | --- |
-| `confirmed` | 실행한 Effect가 있고, 서버가 본 것과 일치합니다 |
+| 판정           | 뜻                                                         |
+| -------------- | ---------------------------------------------------------- |
+| `confirmed`    | 실행한 Effect가 있고, 서버가 본 것과 일치합니다            |
 | `contradicted` | 실행한 것이 하나도 없거나, 남겼다는 파일이 실제로 없습니다 |
-| `unverifiable` | 실행은 했으나 서버가 직접 볼 수 있는 것이 없었습니다 |
+| `unverifiable` | 실행은 했으나 서버가 직접 볼 수 있는 것이 없었습니다       |
 
 `contradicted` 는 진행을 막지 않습니다. 다만 기록에 남고, 다음 Turn으로 옮겨 가도 지워지지 않습니다. 그래서 사실과 다른 `closing` 은 남는 것이 없습니다.
 
@@ -953,12 +985,12 @@ agent는 `get_task_context(T51)` 로 그 태스크의 기록과 연결된 대화
 
 **그 태스크를 진행하는 동안 알게 된 것들입니다.** 코드 어디를 봤고, 무엇이 나왔고, 왜 그 방향으로 갔는지. 작업하면서 손에 들어온 정보 전부입니다.
 
-| 남길 것 | 예 |
-| --- | --- |
-| 확인한 사실 | "카운터 초기화는 `auth/session.rs:88` 과 `auth/lock.rs:41` 두 곳" |
-| 실행한 명령과 출력 | "`cargo test auth::` → 3 failed, 전부 만료 경로" |
-| 고른 이유와 버린 대안 | "한쪽으로 합치려다 만료 시 잠금이 풀려 접었다" |
-| 아직 못 한 것 | "동시 로그인 경로는 아직 안 봤다" |
+| 남길 것               | 예                                                                |
+| --------------------- | ----------------------------------------------------------------- |
+| 확인한 사실           | "카운터 초기화는 `auth/session.rs:88` 과 `auth/lock.rs:41` 두 곳" |
+| 실행한 명령과 출력    | "`cargo test auth::` → 3 failed, 전부 만료 경로"                  |
+| 고른 이유와 버린 대안 | "한쪽으로 합치려다 만료 시 잠금이 풀려 접었다"                    |
+| 아직 못 한 것         | "동시 로그인 경로는 아직 안 봤다"                                 |
 
 이것들은 대화 안에만 있으면 창을 닫는 순간 사라집니다. 태스크에 적어 두면 남습니다.
 
@@ -1049,10 +1081,10 @@ agent가 고른 번호가 마음에 안 들면 그때 옮기면 됩니다.
 
 **노트를 언제 쓰는지** 헷갈리면 이 기준입니다.
 
-| | 어디에 |
-| --- | --- |
+|                               | 어디에            |
+| ----------------------------- | ----------------- |
 | 그 태스크를 하는 동안만 쓸 것 | 태스크 문맥 (9.8) |
-| 태스크가 끝나도 계속 쓸 것 | 노트 |
+| 태스크가 끝나도 계속 쓸 것    | 노트              |
 
 두 달 뒤에 다시 찾을 것 같으면 노트입니다.
 
@@ -1157,15 +1189,15 @@ kontexus-cli note list --fef --no-refresh    # 다시 읽지 않음
 
 **기본값이 가족마다 다릅니다.** 얼마나 자주 바뀌는 것인지에 맞춰 놓았습니다.
 
-| 명령 | 기본 주기 |
-| --- | --- |
-| `task list` · `task status` · `track log` | 3초 |
-| `chat list` · `chat search` | 15초 |
-| `note list` · `note search` | 60초 |
+| 명령                                      | 기본 주기 |
+| ----------------------------------------- | --------- |
+| `task list` · `task status` · `track log` | 3초       |
+| `chat list` · `chat search`               | 15초      |
+| `note list` · `note search`               | 60초      |
 
-| 옵션 | 뜻 |
-| --- | --- |
-| `--refresh <초>` | 그 주기로 다시 읽습니다 |
+| 옵션                           | 뜻                                     |
+| ------------------------------ | -------------------------------------- |
+| `--refresh <초>`               | 그 주기로 다시 읽습니다                |
 | `--refresh 0` · `--no-refresh` | 다시 읽지 않습니다. 둘은 같은 뜻입니다 |
 
 두 옵션을 함께 주거나 숫자가 아닌 값을 주면 거부합니다.
@@ -1177,10 +1209,10 @@ kontexus-cli note list --fef --no-refresh    # 다시 읽지 않음
 
 **예외 둘**을 알아 두십시오.
 
-| 명령 | 다른 점 |
-| --- | --- |
-| `task <TaskID> --fef` | `--refresh` 를 받지 않습니다. 주기가 언제나 0입니다 |
-| `note tree` | 다시 읽지 않습니다. 접었다 펴는 화면이라 목록을 새로 받을 이유가 없습니다 |
+| 명령                  | 다른 점                                                                   |
+| --------------------- | ------------------------------------------------------------------------- |
+| `task <TaskID> --fef` | `--refresh` 를 받지 않습니다. 주기가 언제나 0입니다                       |
+| `note tree`           | 다시 읽지 않습니다. 접었다 펴는 화면이라 목록을 새로 받을 이유가 없습니다 |
 
 `--fef` 없이 `--refresh` 만 주는 것은 뜻이 없습니다. 다시 읽을 화면이 열리지 않기 때문입니다.
 
