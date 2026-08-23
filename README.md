@@ -6,7 +6,7 @@ AI coding agent의 작업 문맥을 프로젝트 안에 오래 남기는 도구�
 
 | 실행파일       | 하는 일                                                                                  |
 | -------------- | ---------------------------------------------------------------------------------------- |
-| `kontexus-mcp` | AI agent가 붙는 MCP server. Codex, Claude, opencode, Antigravity IDE에서 도구로 부릅니다 |
+| `kontexus-mcp` | AI agent가 붙는 MCP server. Codex, Claude, OpenCode, Grok, Antigravity IDE에서 도구로 부릅니다 |
 | `kontexus-cli` | 사람이 직접 쓰는 CLI. 저장소 초기화, 태스크·노트 관리, 체크포인트                        |
 
 ---
@@ -555,6 +555,7 @@ kontexus-cli config codex
 kontexus-cli config claude
 kontexus-cli config opencode
 kontexus-cli config gemini
+kontexus-cli config grok hook
 ```
 
 ### 5.1 Codex CLI
@@ -650,7 +651,21 @@ claude mcp add kontexus-mcp \
 
 이미 다른 MCP server가 등록되어 있으면 `mcpServers` 안에 항목만 더하십시오. 파일 전체를 덮어쓰면 기존 등록이 삭제됩니다. 편집 후 Antigravity IDE를 다시 시작해야 적용됩니다.
 
-### 5.5 Gemini CLI
+### 5.5 Grok TUI
+
+`~/.grok/config.toml`의 `[mcp_servers.kontexus-mcp]`에 넣습니다.
+
+```toml
+[mcp_servers.kontexus-mcp]
+command = "kontexus-mcp"
+env = { KONTEXUS_STORAGE = "/절대경로/프로젝트/.workgraph" }
+```
+
+프로젝트마다 경로가 다르면 저장소 루트의 `.grok/config.toml`에 같은 조각을 둘 수 있습니다. 프로젝트 파일은 그 폴더를 신뢰한 뒤에만 적용됩니다 (`/hooks-trust`).
+
+대화 기록을 남기려면 Stop hook도 함께 걸어야 합니다 - 6.4를 보십시오.
+
+### 5.6 Gemini CLI
 
 ```json
 {
@@ -677,7 +692,8 @@ Stop hook은 agent가 한 턴을 마칠 때마다 `kontexus-cli chat hook`을 �
 agent가 턴을 마침 → Stop hook 실행 → kontexus-cli chat hook
                                         → Claude Code 면 transcript 를 읽어 import
                                         → OpenCode 면 repository session 을 읽어 upsert
-                                        → Claude Code와 OpenCode가 아니면 Codex 최신 thread 를 import
+                                        → Grok 면 현재 session 의 updates.jsonl 을 읽어 upsert
+                                        → 그 외면 Codex 최신 thread 를 import
 ```
 
 ### 6.1 Claude Code
@@ -756,25 +772,65 @@ OpenCode는 child process에 `OPENCODE=1`을 설정합니다. `chat hook`은 이
 
 Stop hook은 매번 repository session을 다시 읽고 같은 `datetime` row를 `Upsert`합니다. 따라서 한 턴의 assistant 응답이 이전 실행보다 길어졌으면 기존 row의 `title`과 `content`가 갱신됩니다.
 
-### 6.4 직접 import
+### 6.4 Grok TUI
 
-Stop hook과 관계없이 과거 session이나 transcript를 한 번 가져오려면 다음 명령을 직접 실행합니다. `import-opencode`는 OpenCode Stop hook command가 아니라 일회성 importer입니다.
+Grok는 Claude Code의 `.claude/settings.json` Stop hook을 읽습니다. 6.1의 조각을 프로젝트에 두면, 그 폴더를 신뢰한 뒤(`/hooks-trust` 또는 첫 실행 시 trust) 매 턴 끝에 `kontexus-cli chat hook`이 실행됩니다.
+
+Grok 전용 파일을 쓰려면 `kontexus-cli config grok hook`의 출력을 다음 중 하나에 넣습니다.
+
+| 위치                               | 신뢰                                 |
+| ---------------------------------- | ------------------------------------ |
+| `~/.grok/hooks/*.json`             | 항상                                 |
+| `<프로젝트>/.grok/hooks/*.json`    | 프로젝트 폴더 trust 필요             |
+| `<프로젝트>/.claude/settings.json` | 프로젝트 폴더 trust 필요. 6.1과 동일 |
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "kontexus-cli chat hook",
+            "timeout": 60,
+            "statusMessage": "Importing latest Grok turn"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Grok hook 프로세스는 `GROK_SESSION_ID`를 받습니다. `chat hook`은 이 값으로 현재 session의 `updates.jsonl`을 다시 읽고, 같은 `datetime` row를 `Upsert`합니다. 도구 호출 뒤에 나온 두 번째 assistant 문장도 별도 `**Assistant:**` 파트로 남습니다.
+
+프로젝트 hook이 동작하지 않으면 `/hooks-trust`로 그 폴더를 신뢰했는지, PATH의 `kontexus-cli`가 Grok 분기가 있는 빌드인지 확인하십시오.
+
+### 6.5 직접 import
+
+Stop hook과 관계없이 과거 session이나 transcript를 한 번 가져오려면 다음 명령을 직접 실행합니다. `import-opencode`와 `import-grok`는 Stop hook command가 아니라 일회성 importer입니다.
 
 ```bash
 kontexus-cli chat import-opencode --list       # 현재 repository의 OpenCode session 목록
 kontexus-cli chat import-opencode --id <id>    # 지정 OpenCode session을 한 번 import
 kontexus-cli chat import-opencode --update     # 기존 datetime row도 갱신
+kontexus-cli chat import-grok --list           # 현재 repository의 Grok session 목록
+kontexus-cli chat import-grok --id <id>        # 지정 Grok session을 한 번 import
+kontexus-cli chat import-grok --update         # 기존 datetime row도 갱신
 kontexus-cli chat import-antigravity           # Antigravity IDE transcript
 kontexus-cli chat import-from <파일 경로>      # markdown transcript 파일
 kontexus-cli chat import-claude                # Claude 세션(--update 로 upsert)
 kontexus-cli chat import-codex                 # Codex 최신 thread
 ```
 
-OpenCode Stop hook은 항상 `Upsert`를 사용하지만, 직접 실행하는 `import-opencode`는 기본적으로 기존 row를 유지합니다. 일회성 import에서도 기존 row를 갱신하려면 `--update`를 지정하십시오.
+`import-grok`는 `GROK_SESSIONS`, `GROK_HOME/sessions`, `~/.grok/sessions` 순서로 session 디렉터리를 찾습니다. `--source-dir`로 경로를 지정할 수 있으며 `--thinking`, `--tools`, `--stdout`도 지원합니다.
+
+OpenCode·Grok Stop hook은 항상 `Upsert`를 사용하지만, 직접 실행하는 `import-opencode`와 `import-grok`는 기본적으로 기존 row를 유지합니다. 일회성 import에서도 기존 row를 갱신하려면 `--update`를 지정하십시오.
 
 Antigravity IDE와 Gemini에는 현재 자동 `chat hook`을 설정하지 않습니다. 필요한 transcript는 `import-antigravity` 또는 `import-from`으로 가져오십시오.
 
-### 6.5 저장되는지 확인
+### 6.6 저장되는지 확인
 
 hook을 걸어도 **capture가 꺼져 있으면 아무것도 저장되지 않습니다.** `chat hook`이 가장 먼저 보는 것이 이 상태입니다.
 
@@ -790,13 +846,16 @@ kontexus-cli chat list --format text
 kontexus-cli chat search "방금 말한 낱말"
 ```
 
-| 증상                                   | 확인할 것                                                     |
-| -------------------------------------- | ------------------------------------------------------------- |
-| 목록이 비어 있음                       | `chat capture status`가 `enabled`인지                         |
-| 그래도 비어 있음                       | `which kontexus-cli`로 hook이 부를 실행파일이 PATH에 있는지   |
-| Claude인데 Codex 것이 들어옴           | `chat hook` 대신 다른 hook이 걸려 있는지                      |
-| OpenCode 기록이 다른 프로젝트에 들어옴 | plugin command에 `--storage ${directory}/.workgraph`가 있는지 |
-| OpenCode plugin 변경이 적용되지 않음   | OpenCode를 다시 시작했는지                                    |
+| 증상                                   | 확인할 것                                                                         |
+| -------------------------------------- | --------------------------------------------------------------------------------- |
+| 목록이 비어 있음                       | `chat capture status`가 `enabled`인지                                             |
+| 그래도 비어 있음                       | `which kontexus-cli`로 hook이 부를 실행파일이 PATH에 있는지                       |
+| Claude인데 Codex 것이 들어옴           | `chat hook` 대신 다른 hook이 걸려 있는지                                          |
+| Grok인데 Codex 것이 들어옴             | PATH의 `kontexus-cli`가 Grok 분기 빌드인지, `GROK_SESSION_ID`가 hook에 넘어가는지 |
+| Grok 프로젝트 hook이 실행되지 않음     | `/hooks-trust`로 폴더를 신뢰했는지                                                |
+| Grok 첫 문장만 보이고 최종 답이 없음   | PATH의 `kontexus-cli`를 도구 호출 뒤 문장을 나누는 빌드로 다시 설치했는지         |
+| OpenCode 기록이 다른 프로젝트에 들어옴 | plugin command에 `--storage ${directory}/.workgraph`가 있는지                     |
+| OpenCode plugin 변경이 적용되지 않음   | OpenCode를 다시 시작했는지                                                        |
 
 ---
 
