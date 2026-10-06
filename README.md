@@ -9,6 +9,8 @@ AI coding agent의 작업 문맥을 프로젝트 안에 오래 남기는 도구�
 | `kontexus-mcp` | AI agent가 붙는 MCP server. Codex, Claude, OpenCode, Grok, Antigravity IDE에서 도구로 부릅니다 |
 | `kontexus-cli` | 사람이 직접 쓰는 CLI. 저장소 초기화, 태스크·노트 관리, 체크포인트                        |
 
+**Pi coding agent도 지원합니다.** `import-pi`로 저장된 대화를 가져오거나, `agent_end` extension으로 대화를 자동 수집합니다. 설치와 사용법은 6.5절을 보십시오.
+
 ---
 
 ## 1. 설치
@@ -682,18 +684,19 @@ env = { KONTEXUS_STORAGE = "/절대경로/프로젝트/.workgraph" }
 
 ---
 
-## 6. 대화 기록 저장 (Stop hook)
+## 6. 대화 기록 저장 (chat hook)
 
-> **이 절을 건너뛰면 대화가 저장되지 않습니다.** MCP 등록은 agent가 kontexus의 도구를 부를 수 있게 할 뿐이고, 주고받은 대화 자체를 남기는 것은 Stop hook입니다. 세션이 끊긴 뒤 `search_chat`으로 되살릴 수 있는 것은 여기서 저장된 것뿐입니다.
+> **대화를 자동으로 저장하려면 이 절의 설정이 필요합니다.** MCP 등록은 agent가 kontexus의 도구를 부를 수 있게 합니다. 대화 자체는 Stop hook, OpenCode의 `session.idle` plugin 또는 Pi의 `agent_end` extension으로 수집합니다. 기존 대화는 6.6절의 수동 import로 가져올 수 있습니다.
 
-Stop hook은 agent가 한 턴을 마칠 때마다 `kontexus-cli chat hook`을 실행합니다. 그 명령이 지금 도는 agent를 검출해 그 턴의 대화를 `.workgraph`에 밀어 넣습니다.
+자동 수집 설정은 agent가 한 턴을 마칠 때마다 `kontexus-cli chat hook`을 실행합니다. 이 명령이 실행 환경을 판별하고 agent의 원본 session을 다시 읽어 대화를 저장합니다.
 
 ```
-agent가 턴을 마침 → Stop hook 실행 → kontexus-cli chat hook
+agent가 턴을 마침 → hook 또는 extension → kontexus-cli chat hook
                                         → Claude Code 면 transcript 를 읽어 import
                                         → OpenCode 면 repository session 을 읽어 upsert
                                         → Grok 면 현재 session 의 updates.jsonl 을 읽어 upsert
-                                        → 그 외면 Codex 최신 thread 를 import
+                                        → Pi 면 repository 의 전체 JSONL session 을 읽어 upsert
+                                        → 그 외면 실제 채팅이 있는 Codex 최신 thread 를 import
 ```
 
 ### 6.1 Claude Code
@@ -807,30 +810,91 @@ Grok hook 프로세스는 `GROK_SESSION_ID`를 받습니다. `chat hook`은 이 
 
 프로젝트 hook이 동작하지 않으면 `/hooks-trust`로 그 폴더를 신뢰했는지, PATH의 `kontexus-cli`가 Grok 분기가 있는 빌드인지 확인하십시오.
 
-### 6.5 직접 import
+### 6.5 Pi coding agent
 
-Stop hook과 관계없이 과거 session이나 transcript를 한 번 가져오려면 다음 명령을 직접 실행합니다. `import-opencode`와 `import-grok`는 Stop hook command가 아니라 일회성 importer입니다.
+Pi `1.0.2`의 session version 3 JSONL을 지원합니다. Pi에서는 `agent_end` event에 등록한 TypeScript extension이 assistant 응답 저장 후 `chat hook`을 실행합니다.
+
+프로젝트 루트에서 extension template을 출력합니다.
+
+```bash
+kontexus-cli config pi hook
+```
+
+출력 내용을 검토한 뒤 다음 경로 중 하나에 저장하십시오. 기존 extension 파일이 있으면 덮어쓰지 마십시오.
+
+| 설치 범위 | 경로 |
+| --- | --- |
+| 현재 프로젝트 | `.pi/extensions/kontexus-chat.ts` |
+| 사용자 기본 | `~/.pi/agent/extensions/kontexus-chat.ts` |
+| 사용자 agent directory를 변경한 경우 | `$PI_CODING_AGENT_DIR/extensions/kontexus-chat.ts` |
+
+Pi에서 `/reload`로 extension을 다시 읽고, 프로젝트의 chat capture를 켭니다.
+
+```bash
+kontexus-cli chat capture enable
+```
+
+`agent_end`마다 현재 repository와 연결된 전체 session과 모든 branch, compaction 이전 대화를 다시 읽어 Upsert합니다. session header의 `cwd`가 repository 또는 하위 directory에 속하는 파일만 포함합니다. `--session`이나 `--session-dir`로 저장 위치를 바꿔도 extension이 `PI_SESSION_FILE`을 전달하므로 현재 파일을 함께 수집합니다.
+
+`--no-session` 대화는 자동 수집하지 않습니다. Extension은 중복 callback을 직렬 처리하고, PATH의 `kontexus-cli`를 실행합니다. CLI 부재·실패·30초 timeout은 Pi 대화를 중단하지 않습니다.
+
+Pi 환경은 `PI_CODING_AGENT=true` 또는 `AI_AGENT=pi`로 판별합니다. 제공되는 extension이 이 marker를 설정하므로 수동으로 환경 변수를 추가할 필요는 없습니다. hook 오류 원인을 확인하려면 `kontexus-cli chat import-pi`를 직접 실행하십시오.
+
+### 6.6 직접 import
+
+자동 수집 설정과 관계없이 과거 session이나 transcript를 가져오려면 다음 명령을 직접 실행합니다.
 
 ```bash
 kontexus-cli chat import-opencode --list       # 현재 repository의 OpenCode session 목록
 kontexus-cli chat import-opencode --id <id>    # 지정 OpenCode session을 한 번 import
-kontexus-cli chat import-opencode --update     # 기존 datetime row도 갱신
+kontexus-cli chat import-opencode              # 전체 session import, 기존 row는 기본 UPDATE
+kontexus-cli chat import-opencode --stdout     # 저장 없이 Markdown 확인
+kontexus-cli chat import-pi --list             # 현재 repository의 Pi session 목록
+kontexus-cli chat import-pi                    # 전체 session·branch import, 기본 UPDATE
+kontexus-cli chat import-pi --id <session-id>   # 지정 Pi session만 import
+kontexus-cli chat import-pi --source-dir /path/to/sessions --stdout
 kontexus-cli chat import-grok --list           # 현재 repository의 Grok session 목록
 kontexus-cli chat import-grok --id <id>        # 지정 Grok session을 한 번 import
 kontexus-cli chat import-grok --update         # 기존 datetime row도 갱신
 kontexus-cli chat import-antigravity           # Antigravity IDE transcript
 kontexus-cli chat import-from <파일 경로>      # markdown transcript 파일
 kontexus-cli chat import-claude                # Claude 세션(--update 로 upsert)
-kontexus-cli chat import-codex                 # Codex 최신 thread
+kontexus-cli chat import-codex                 # 실제 채팅이 있는 Codex 최신 thread
+kontexus-cli chat import-codex --all           # 현재 프로젝트의 전체 thread
+kontexus-cli chat import-codex --dry-run       # 저장 없이 입력 검사
 ```
 
 `import-grok`는 `GROK_SESSIONS`, `GROK_HOME/sessions`, `~/.grok/sessions` 순서로 session 디렉터리를 찾습니다. `--source-dir`로 경로를 지정할 수 있으며 `--thinking`, `--tools`, `--stdout`도 지원합니다.
 
-OpenCode·Grok Stop hook은 항상 `Upsert`를 사용하지만, 직접 실행하는 `import-opencode`와 `import-grok`는 기본적으로 기존 row를 유지합니다. 일회성 import에서도 기존 row를 갱신하려면 `--update`를 지정하십시오.
+#### Codex·OpenCode·Pi 지원 기준
+
+다음 agent 버전과 기록 형식을 기준으로 chat import를 확인했습니다.
+
+| Agent | 확인 기준 버전 | 원본 형식 및 기본 선택 |
+| --- | --- | --- |
+| Codex CLI | `0.160.0` | Codex session JSONL의 completed item과 legacy event를 처리합니다. 현재 프로젝트에서 실제 채팅이 있는 최신 thread 하나를 선택하며, 설정 전용 thread는 건너뜁니다. `--all`·`--id`로 범위를 지정할 수 있습니다. |
+| OpenCode | `1.18.30` | source SQLite의 `message`/`part` data를 읽습니다. 현재 repository와 연결된 전체 non-archived session을 선택하며 `--id`로 제한할 수 있습니다. |
+| Pi coding agent | `1.0.2` | session version 3 JSONL의 전체 session·branch와 compaction 이전 원문을 읽습니다. `--id`로 session을 제한할 수 있습니다. |
+
+세 agent의 기본 저장 방식은 **INSERT OR UPDATE(Upsert)**입니다. 새 기록은 추가하고, 재import하면 기존 기록의 `cid`를 유지하면서 title/content를 갱신합니다. OpenCode·Pi의 `--update`는 호환 옵션이며 지정하지 않아도 UPDATE합니다. Grok의 수동 import는 기존 기본값을 유지하므로 갱신하려면 `--update`를 지정하십시오.
+
+기록은 **의미 없는 영역만 제외하고 가능한 모든 내용을 보존합니다.** 본문을 요약하거나 길이 제한으로 자르거나 같은 문장이라는 이유로 제거하지 않습니다.
+
+- 사용자의 요청, assistant 응답, 비어 있지 않은 Reasoning/thinking을 포함합니다.
+- 의미 있는 결과가 있는 Tool 호출의 전체 arguments와 결과를 YAML code block으로 기록합니다. structured 결과, 오류·실패와 이미지·첨부도 보존합니다.
+- 공백과 empty lines뿐인 Reasoning/thinking은 heading을 만들지 않습니다. 결과 없는 Tool 호출과 결과 영역은 함께 제외합니다.
+- `0`, `false`, `{"rows": []}` 같은 결과는 보존합니다. 실제 사용자 요청이 없는 thread/session은 건너뜁니다.
+- Pi는 image data·Tool details·nestedCalls·assistant error·bash 실패를 보존하고, `toolCallId`와 `parentId` 경로로 호출을 연결하여 branch 간 결과를 섞지 않습니다.
+
+수동 import와 `chat hook`은 같은 parser와 내용 보존 규칙을 사용합니다. Codex hook은 수동 import 경로를 직접 호출하고, OpenCode·Pi hook은 같은 reader/parser와 Upsert 저장 함수를 사용합니다.
+
+OpenCode·Pi의 기존 datetime 식별 방식은 유지합니다. Pi는 같은 초의 서로 다른 user entry나 내용이 다른 fork의 충돌을 저장 전에 오류로 반환합니다. 같은 fork 계열의 일치하는 원본 사본만 하나로 처리하며, `--update`로 충돌 검사를 우회할 수 없습니다. Pi session version 1/2, harness version 4 및 SQLite backend는 지원하지 않습니다.
+
+Pi source 경로 우선순위는 `--source-dir` → `PI_CODING_AGENT_SESSION_DIR` → `$PI_CODING_AGENT_DIR/sessions` → `~/.pi/agent/sessions`입니다. OpenCode·Pi의 `--stdout`과 Codex의 `--dry-run`은 destination DB를 변경하지 않습니다.
 
 Antigravity IDE와 Gemini에는 현재 자동 `chat hook`을 설정하지 않습니다. 필요한 transcript는 `import-antigravity` 또는 `import-from`으로 가져오십시오.
 
-### 6.6 저장되는지 확인
+### 6.7 저장되는지 확인
 
 hook을 걸어도 **capture가 꺼져 있으면 아무것도 저장되지 않습니다.** `chat hook`이 가장 먼저 보는 것이 이 상태입니다.
 
@@ -856,6 +920,8 @@ kontexus-cli chat search "방금 말한 낱말"
 | Grok 첫 문장만 보이고 최종 답이 없음   | PATH의 `kontexus-cli`를 도구 호출 뒤 문장을 나누는 빌드로 다시 설치했는지         |
 | OpenCode 기록이 다른 프로젝트에 들어옴 | plugin command에 `--storage ${directory}/.workgraph`가 있는지                     |
 | OpenCode plugin 변경이 적용되지 않음   | OpenCode를 다시 시작했는지                                                        |
+| Pi 대화가 저장되지 않음                | extension을 저장한 뒤 `/reload`했는지, capture가 enabled인지, `--no-session`으로 실행하지 않았는지 |
+| Pi hook 오류를 확인하고 싶음           | `kontexus-cli chat import-pi`를 직접 실행해 stderr를 확인하십시오                    |
 
 ---
 
